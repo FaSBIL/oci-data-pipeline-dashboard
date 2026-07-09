@@ -1,6 +1,6 @@
 🌍 OCI 기반 글로벌 통계 데이터 파이프라인 구축
 
-피지컬AI 부트캠프 중간평가 과제 > 프로젝트명: 글로벌 출산율 및 경제성장률 상관관계 분석 대시보드
+피지컬AI 부트캠프 최종평가 과제 > 프로젝트명: 글로벌 출산율 및 경제성장률 상관관계 분석 대시보드
 
 1. 서비스 소개 및 사용 시나리오
 
@@ -18,9 +18,9 @@
 
 🛠 사용된 OCI 리소스
 
-Compute (Linux VM): 데이터 수집(Python), 백엔드 서버(Node.js), 프론트엔드 웹 서버 가동
+Compute (Linux VM): 데이터 자동 수집(Python+Cron), 백엔드 서버(Node.js), 프론트엔드 웹 서버 가동
 
-Block Volume: 리눅스 OS 구동 및 수집된 원시 데이터(CSV) 로컬 저장
+Block Volume: 리눅스 OS 구동 및 수집된 원시 데이터(CSV) 로컬 저장 및 보존
 
 Database (Oracle XE): VM 내부에 구축된 Oracle DB 플러거블 데이터베이스(XEPDB1) 사용
 
@@ -29,47 +29,52 @@ Network (VCN): Security List를 통해 백엔드(3000) 및 프론트엔드(8080)
 📊 파이프라인 아키텍처 (Workflow)
 
 graph TD
-    A[World Bank Open API] -->|Python requests| B(Linux Block Volume : CSV)
+    A[World Bank Open API] -->|Python requests / 예외처리| B(Linux Block Volume : CSV)
     B -->|Oracle External Table| C[(Oracle Database XE)]
     C -->|SQL Select| D[Node.js Express API]
     D -->|JSON| E[HTML/JS Frontend]
-    E -->|Chart.js & 통계 분석| F((사용자 웹 브라우저))
+    E -->|Chart.js & 실시간 통계 분석| F((사용자 웹 브라우저))
+    
+    subgraph "Automation (Linux Cron)"
+    B -.->|주기적 스케줄링 실행| A
+    end
 
-
-
-(참고: GitHub 마크다운에서 위 코드는 다이어그램으로 자동 렌더링됩니다. 과제 제출 시에는 기획서에 있던 이미지 캡처본을 함께 첨부하시기 바랍니다.)
 
 3. 데이터 흐름 상세 설명
 
-수집 (Collect): Python 스크립트(data_collection.py)를 통해 World Bank REST API를 호출하여 '합계출산율'과 'GDP 성장률' 원시 데이터를 수집합니다.
+수집 (Collect): Python 스크립트(data_collection.py)를 통해 World Bank API를 호출합니다. Try-Except 구문을 통해 네트워크 지연 및 API 오류에 대한 예외 처리를 구현하여 안정성을 확보했습니다.
 
-저장 (Store): 수집된 JSON 응답을 Pandas를 이용해 병합 후 CSV 형태로 OCI VM의 Block Volume(/home/oracle/project)에 저장합니다.
+저장 (Store): Pandas를 이용해 데이터를 병합하고, OCI VM의 Block Volume(/home/opc/project/)에 CSV 형태로 저장합니다.
 
-가공 (Process): * (DB 단) Oracle DB의 External Table을 생성하여 CSV를 읽어 들이고, 데이터 유실(쉼표 섞임 문제 등)을 방지하는 정제 과정을 거쳐 영구 테이블(global_data)로 적재(INSERT)합니다.
+가공 (Process): * (스케줄링/자동화) 리눅스 cron을 활용하여 매주 데이터 수집 파이프라인(run_pipeline.sh)이 자동으로 동작하도록 자동화 로직을 구현했습니다.
 
-(웹 단) Node.js 서버에서 쿼리한 데이터를 프론트엔드(JS)로 전달하고, 자바스크립트가 피어슨 상관계수 및 선형회귀 방정식을 동적으로 계산합니다.
+(DB/웹) Oracle DB External Table을 통해 쉼표 섞임 등의 데이터를 정제하고 영구 적재합니다. Node.js가 제공한 데이터를 받아 자바스크립트가 피어슨 상관계수 및 선형회귀를 동적으로 가공합니다.
 
-제공 (Serve): Node.js 백엔드 서버가 3000번 포트로 REST API를 제공하며, Chart.js와 Tailwind CSS로 구성된 프론트엔드(8080 포트)가 사용자에게 시각적 인사이트를 제공합니다.
+제공 (Serve): Node.js 서버(3000포트) 기반 REST API와 Chart.js+Tailwind CSS 프론트엔드(8080포트)를 통해 대시보드 형태로 사용자에게 인사이트를 제공합니다.
 
 4. 설치 및 실행 방법
 
-Step 1: 데이터 수집
+Step 1: 자동화된 데이터 수집 (Cron 설정)
 
-# 필수 라이브러리 설치 및 파이썬 수집 스크립트 실행
+# 필수 라이브러리 설치
 pip3 install requests pandas
-python3 data_collection.py
 
+# 쉘 스크립트 실행 권한 부여
+chmod +x run_pipeline.sh
+
+# Cron 스케줄러 등록 (매주 월요일 새벽 2시 자동 수집)
+crontab -e
+# 아래 내용 추가: 0 2 * * 1 /home/opc/project/run_pipeline.sh >> /home/opc/project/pipeline.log 2>&1
 
 
 Step 2: 오라클 DB 적재
 
 -- 관리자(sysdba) 접속 후 디렉토리 생성 및 권한 부여
-create or replace directory proj_dir as '/home/oracle/project';
+create or replace directory proj_dir as '/home/opc/project';
 grant read, write on directory proj_dir to [사용자계정];
 
 -- 외부 테이블 생성 (CSV 연동) 및 영구 테이블 적재
 create table global_data as select * from global_data_ext;
-
 
 
 Step 3: 백엔드 서버 실행
@@ -79,7 +84,6 @@ npm install express oracledb cors
 node server.js
 
 
-
 Step 4: 프론트엔드 웹 뷰어 실행
 
 # 새로운 터미널 세션에서 웹 서버 구동 (8080번 포트)
@@ -87,11 +91,11 @@ python3 -m http.server 8080
 # 브라우저 접속: http://[OCI_VM_공인IP]:8080
 
 
-
 5. 한계점 및 향후 개선 방향
 
-한계점 1 (자동화 부재): 현재 데이터 수집 스크립트는 수동으로 실행해야 합니다. World Bank 데이터 갱신 주기에 맞춰 Linux cron 스케줄러를 적용하여 연 1회 자동 수집되도록 개선할 필요가 있습니다.
+한계점 (Object Storage 미사용): 초기 기획과 달리 로컬 Block Volume에만 원본 데이터를 저장했습니다. 이는 단일 장애점(SPOF)이 될 수 있습니다.
 
-한계점 2 (Object Storage 미사용): 초기 기획과 달리 로컬 Block Volume에만 원본 데이터를 저장했습니다. 향후 OCI Object Storage API를 연동하여 안전한 클라우드 데이터 레이크(Data Lake)를 구축할 예정입니다.
+향후 개선 방향 (클라우드 네이티브 고도화): 1. 수집된 CSV 파일을 로컬뿐만 아니라 OCI Object Storage API를 연동하여 업로드함으로써 안전한 클라우드 데이터 레이크(Data Lake)를 구축할 예정입니다.
+2. 현재 로컬 환경의 Oracle XE를 사용 중이나, 향후 확장성과 관리 편의성을 위해 OCI Autonomous Database(ADB)로 마이그레이션하여 완전 관리형 클라우드 데이터베이스를 경험해 보고자 합니다.
 
-개선 방향: 현재 로컬 환경의 Oracle XE를 사용 중이나, 향후 확장성과 관리 편의성을 위해 OCI Autonomous Database(ADB)로 마이그레이션하여 완전 관리형 클라우드 데이터베이스를 경험해 보고자 합니다.
+※ 실제 운영 환경에서는 DB 계정과 비밀번호를 코드에 직접 작성하지 않고 환경변수(.env)로 관리해야 합니다.
