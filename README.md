@@ -1,4 +1,5 @@
 🌍 OCI 기반 글로벌 통계 데이터 파이프라인 구축
+[GitHub Repository Link](https://github.com/FaSBIL/oci-data-pipeline-dashboard)
 
 피지컬AI 부트캠프 최종평가 과제 > 프로젝트명: 글로벌 출산율 및 경제성장률 상관관계 분석 대시보드
 
@@ -97,5 +98,10 @@ python3 -m http.server 8080
 
 향후 개선 방향 (클라우드 네이티브 고도화): 1. 수집된 CSV 파일을 로컬뿐만 아니라 OCI Object Storage API를 연동하여 업로드함으로써 안전한 클라우드 데이터 레이크(Data Lake)를 구축할 예정입니다.
 2. 현재 로컬 환경의 Oracle XE를 사용 중이나, 향후 확장성과 관리 편의성을 위해 OCI Autonomous Database(ADB)로 마이그레이션하여 완전 관리형 클라우드 데이터베이스를 경험해 보고자 합니다.
+
+### 💡 파이프라인 운영 팁 (Troubleshooting)
+- **로그 확인:** 데이터가 제대로 수집되었는지 확인하려면 `cat /home/opc/project/pipeline.log` 명령어를 사용하세요.
+- **DB 연동 에러:** 오라클 External Table 사용 시 CSV 파일의 인코딩이 UTF-8인지, 데이터 구분자(쉼표) 처리가 정확한지 확인하시기 바랍니다.
+- **자동화 확인:** `crontab -l` 명령으로 스케줄이 정상 등록되어 있는지 언제든 확인할 수 있습니다.
 
 ※ 실제 운영 환경에서는 DB 계정과 비밀번호를 코드에 직접 작성하지 않고 환경변수(.env)로 관리해야 합니다.
